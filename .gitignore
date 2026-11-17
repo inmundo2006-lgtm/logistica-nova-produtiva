@@ -1,0 +1,6 @@
+# segredos e dados com nomes de colaboradores nunca vão para o GitHub
+.streamlit/secrets.toml
+dados_locais/
+*.xlsx
+__pycache__/
+.venv/

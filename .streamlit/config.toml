@@ -1,0 +1,13 @@
+# Identidade visual — mesma paleta do Controle de Frotas (tema claro, dourado).
+[theme]
+base = "light"
+primaryColor = "#9B8328"
+backgroundColor = "#F7F5EF"
+secondaryBackgroundColor = "#F1EDE2"
+textColor = "#1F1C14"
+linkColor = "#9B8328"
+borderColor = "#DED7BA"
+dataframeHeaderBackgroundColor = "#F1EDE2"
+redColor = "#C62828"
+showWidgetBorder = true
+baseRadius = "8px"
