@@ -380,6 +380,54 @@ with tabs[2]:
                 with st.expander(f"{len(d)} colaboradores"):
                     st.dataframe(d[["Nome", "Localidade", hora]].sort_values([hora, "Nome"]), hide_index=True, width="stretch")
 
+        def pares(ida, volta):
+            """Agrupa as viagens de ida e de volta que levam as mesmas pessoas: cada grupo vira uma linha da tela.
+            Uma ida pode voltar em 2 veículos (ou 2 idas em 1), porque o veículo da volta é o que está livre
+            perto da usina naquela hora. Pareia pelas pessoas (escala) e, sem escala, pelas localidades."""
+            pai = {}
+
+            def raiz(n):
+                while pai.setdefault(n, n) != n:
+                    n = pai[n]
+                return n
+
+            def une(a, b):
+                pai[raiz(a)] = raiz(b)
+            for i in range(len(ida)): raiz(("I", i))
+            for j in range(len(volta)): raiz(("V", j))
+            usina = lambda v: next((h for l, h in v["paradas"] if l == "USINA"), "")
+            ix_i = {(v["veiculo"], usina(v)): i for i, v in enumerate(ida)}
+            ix_v = {(v["veiculo"], usina(v)): j for j, v in enumerate(volta)}
+            ligou = False
+            for a in RES.get("alocacao", {}).values():
+                i = ix_i.get((a.get("IDA", {}).get("veiculo"), a.get("IDA", {}).get("usina")))
+                j = ix_v.get((a.get("VOLTA", {}).get("veiculo"), a.get("VOLTA", {}).get("usina")))
+                if i is not None and j is not None:
+                    une(("I", i), ("V", j)); ligou = True
+            if not ligou:
+                for i, a in enumerate(ida):
+                    for j, b in enumerate(volta):
+                        if set(a["carga"]) & set(b["carga"]):
+                            une(("I", i), ("V", j))
+            grupos = {}
+            for i, v in enumerate(ida): grupos.setdefault(raiz(("I", i)), ([], []))[0].append(v)
+            for j, v in enumerate(volta): grupos.setdefault(raiz(("V", j)), ([], []))[1].append(v)
+            ordem = lambda v: (v.get("iniMin", 0), v["veiculo"])
+            linhas = [(sorted(a, key=ordem), sorted(b, key=ordem)) for a, b in grupos.values()]
+            return sorted(linhas, key=lambda p: min(ordem(v) for v in p[0] + p[1]))
+
+        def cabecalho(vs, tit, cor):
+            pax, lug = sum(v["ocup"] for v in vs), sum(v["cap"] for v in vs)
+            st.markdown(
+                f'<div style="margin-bottom:6px"><span style="background:{cor};color:#fff;font-size:11.5px;'
+                f'font-weight:700;border-radius:4px;padding:2px 8px">{tit}</span> '
+                f'<span style="font-size:12.5px;color:{COR_TEXTO_FRACO}">{len(vs)} veículo(s) · {pax} pessoas'
+                + (f' em {lug} lugares ({round(100 * pax / lug)}%)' if lug else '') + '</span></div>',
+                unsafe_allow_html=True)
+
+        st.caption("Cada linha mostra uma ida e a volta das mesmas pessoas. A ida e a volta são planejadas em separado: "
+                   "na volta vai o veículo que está livre perto da usina naquela hora, então o número de veículos "
+                   "pode mudar (por exemplo, quem foi num ônibus pode voltar em 2 vans).")
         for g in ("IND", "AGR"):
             turnos_g = [(k, t) for k, t in enumerate(CFG["turnos"]) if t["grupo"] == g]
             if not turnos_g:
@@ -393,18 +441,21 @@ with tabs[2]:
                 with st.container(border=True):
                     st.markdown(f"**{t.get('descricao') or t['nome']}** · turno {t['nome']} · {t['entrada']} às {t['saida']}")
                     c1, c2 = st.columns(2)
-                    for col, vs, s, tit, cor in ((c1, ida, "IDA", f"IDA · entrada {t['entrada']}", COR_IDA),
-                                                 (c2, volta, "VOLTA", f"VOLTA · saída {t['saida']}", COR_VOLTA)):
-                        with col:
-                            pax, lug = sum(v["ocup"] for v in vs), sum(v["cap"] for v in vs)
-                            st.markdown(
-                                f'<div style="margin-bottom:6px"><span style="background:{cor};color:#fff;font-size:11.5px;'
-                                f'font-weight:700;border-radius:4px;padding:2px 8px">{tit}</span> '
-                                f'<span style="font-size:12.5px;color:{COR_TEXTO_FRACO}">{len(vs)} veículo(s) · {pax} pessoas'
-                                + (f' em {lug} lugares ({round(100 * pax / lug)}%)' if lug else '') + '</span></div>',
-                                unsafe_allow_html=True)
-                            for v in sorted(vs, key=lambda v: (v["paradas"][0][1], v["veiculo"])):
-                                cartao(v, s)
+                    with c1:
+                        cabecalho(ida, f"IDA · entrada {t['entrada']}", COR_IDA)
+                    with c2:
+                        cabecalho(volta, f"VOLTA · saída {t['saida']}", COR_VOLTA)
+                    for n, (vi, vv) in enumerate(pares(ida, volta)):
+                        if n:
+                            st.markdown(f'<div style="border-top:1px dashed {COR_BORDA};margin:0 0 4px"></div>',
+                                        unsafe_allow_html=True)
+                        c1, c2 = st.columns(2)
+                        for col, vs, s in ((c1, vi, "IDA"), (c2, vv, "VOLTA")):
+                            with col:
+                                for v in vs:
+                                    cartao(v, s)
+                                if not vs:
+                                    st.caption("—")
         st.download_button("⬇️ Baixar a escala em Excel (colaborador × veículo)",
                            excel_de({"Escala": df_escala(), "Viagens": pd.DataFrame([
                                {"Veículo": v["veiculo"], "Turno": v["turno"], "Sentido": "Ida" if v["sentido"] == "IDA" else "Volta",
